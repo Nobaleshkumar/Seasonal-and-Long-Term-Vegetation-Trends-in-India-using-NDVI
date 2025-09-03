@@ -1,0 +1,102 @@
+filename = 'C:\\Users\\ROHAN G\\Downloads\\analysis.nc4';
+
+% Read required data
+lat = ncread(filename, 'lat');
+lon = ncread(filename, 'lon');
+time = ncread(filename, 'time');
+ndvi = ncread(filename, 'ndvi');
+
+% Convert time units to datetime
+time_units = ncreadatt(filename, 'time', 'units');
+split_str = split(time_units, 'since ');
+ref_date = datetime(strtrim(split_str{2}), 'InputFormat', 'yyyy-MM-dd HH:mm:ss');
+dates = ref_date + days(time);
+
+% Define India bounding box
+lat_range = [6, 38];
+lon_range = [68, 98];
+lat_idx = find(lat >= lat_range(1) & lat <= lat_range(2));
+lon_idx = find(lon >= lon_range(1) & lon <= lon_range(2));
+
+% Extract sub-region NDVI
+lat_india = lat(lat_idx);
+lon_india = lon(lon_idx);
+ndvi_india = ndvi(lon_idx, lat_idx, :); % lon × lat × time
+
+% Select July, August, September 2022
+target_months = [7, 8, 9];
+target_idx = find(ismember(month(dates), target_months) & year(dates) == 2022);
+
+% Dummy temperature (°C) and rainfall (mm)
+monthly_temp = [28, 27, 26];       % Average temperature
+temp_max = [30, 29, 28];           % Max temp
+temp_min = [26, 25, 24];           % Min temp
+monthly_rain = [200, 180, 150];    % Total monthly rainfall
+
+% Prepare NDVI plots
+monthly_ndvi = zeros(length(lon_idx), length(lat_idx), 3);
+
+for i = 1:3
+    % Extract NDVI for the month
+    this_month_idx = target_months(i);
+    month_mask = (month(dates(target_idx)) == this_month_idx);
+    date_indices = target_idx(month_mask);
+
+    ndvi_month = mean(ndvi_india(:, :, date_indices), 3, 'omitnan');
+    monthly_ndvi(:, :, i) = ndvi_month;
+
+    % Plot NDVI
+    figure;
+    imagesc(lon_india, lat_india, ndvi_month'); % Transpose for correct orientation
+    set(gca, 'YDir', 'normal'); % Ensure north-up
+    axis image;
+    colorbar;
+    title(['NDVI over India - ', datestr(datetime(2022, this_month_idx, 1), 'mmmm yyyy')]);
+    xlabel('Longitude');
+    ylabel('Latitude');
+end
+
+%% Temperature Candlestick Plot (Fixed)
+figure; hold on; box on;
+month_dt = datetime(2022, target_months, 1);
+box_days = 10; % Width in days
+clr = [1 0.5 0.2]; % orange
+
+for k = 1:numel(month_dt)
+    % Whisker line from min to max
+    plot([month_dt(k) month_dt(k)], [temp_min(k) temp_max(k)], ...
+         'Color', clr * 0.7, 'LineWidth', 1);
+
+    % Draw box for mean temperature
+    x_fill = [month_dt(k) - days(box_days)/2, ...
+              month_dt(k) + days(box_days)/2, ...
+              month_dt(k) + days(box_days)/2, ...
+              month_dt(k) - days(box_days)/2];
+
+    y_fill = [monthly_temp(k)-0.5, monthly_temp(k)-0.5, ...
+              monthly_temp(k)+0.5, monthly_temp(k)+0.5];
+
+    fill(x_fill, y_fill, clr, 'EdgeColor', 'k');
+end
+
+xticks(month_dt);
+xticklabels({'Jul', 'Aug', 'Sep'});
+title('Monthly Temperature Profile (India, Jul–Sep 2022)');
+ylabel('Temperature (°C)');
+xlabel('Month');
+grid on;
+
+%% Rainfall Bar Chart
+figure;
+month_cats = categorical({'Jul','Aug','Sep'});      % X‑axis labels
+month_cats = reordercats(month_cats, {'Jul','Aug','Sep'});
+
+bar(month_cats, monthly_rain, 0.6, 'FaceColor', [0 0 1]);  % 0.6 = bar width
+ylabel('Rainfall (mm/day)');
+xlabel('Month');
+title('Average Rainfall (India, Jul–Sep 2022)');
+grid on;
+
+% Optional: annotate values on top of each bar
+text(month_cats, monthly_rain + 2, string(monthly_rain), ...
+     'HorizontalAlignment','center','VerticalAlignment','bottom');
